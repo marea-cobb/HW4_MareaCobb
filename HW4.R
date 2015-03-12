@@ -9,9 +9,11 @@
 # spin(hair = "CobbMareaHW3.R", format = "Rmd")
 # file.rename("CobbMareaHW3.md", "CobbMareaHW3.Rmd")
 
+library(data.table)
+library(pheatmap)
 
 #Loads bioconductor packages
-source("http://bioconductor.org/biocLite.R")
+# source("http://bioconductor.org/biocLite.R")
 # biocLite()
 library(limma)
 library(BiocInstaller)
@@ -44,13 +46,15 @@ file_list <- lapply(files, read.table, sep='\t', header=TRUE)
 file_list <- lapply(file_list, function(file_list)subset(file_list, grepl('^[^[:space:]]+$', Gene)))
 
 # Remove duplicated rows
-file_list_unique <- lapply(file_list, function(x){x<-x[!duplicated(x$Gene),]; 
-                                                  x <- x[order(x$Gene),]; 
-                                                  rownames(x) <- x$Gene;
-                                                  x[,-1]})
+file_list_unique <- lapply(file_list, function(x) {
+  x <- x[!duplicated(x$Gene), ]
+  x <- x[order(x$Gene), ]
+  rownames(x) <- x$Gene
+  x[, -1]
+})
 # Take the intersection of all genes
 gene_list <- Reduce(intersect, lapply(file_list_unique, rownames))
-file_list_unique <- lapply(file_list_unique, "[", gene_list,)
+file_list_unique <- lapply(file_list_unique, "[", gene_list, )
 matrix <- as.matrix(do.call(cbind, file_list_unique))
 
 # Clean up the pData
@@ -59,35 +63,67 @@ pd_small$Day <- sapply(strsplit(gsub(" \\[PBMC\\]", "", pd_small$title),"_"),"["
 pd_small$subject <- sapply(strsplit(gsub(" \\[PBMC\\]", "", pd_small$title),"_"),"[",1)
 colnames(matrix) <- rownames(pd_small)
 
-
 # Note that I add one to the count
 new_set <- ExpressionSet(assayData = matrix+1)
 pData(new_set) <- pd_small
 
+#Fitting the model using limma and voom
 design <- model.matrix(~subject+Day, new_set)
 new_set_voom <- voom(new_set,design = design)
-
 lm <- lmFit(new_set_voom, design)
 eb <- eBayes(lm)
 
-cont_matrix <- makeContrasts(timeD7-timeD3,levels=mm_TIV_08)
-fit2 <- contrasts.fit(fit_TIV_08, cont_matrix)
-fit2 <- eBayes(fit2)
-topTable(fit2, adjust = "fdr")
+tt1 <- topTable(eb, coef="DayDay1")
+tt2 <- topTable(eb, coef="DayDay2")
+tt3 <- topTable(eb, coef="DayDay3")
+tt4 <- topTable(eb, coef="DayDay4")
+tt5 <- topTable(eb, coef="DayDay5")
+tt6 <- topTable(eb, coef="DayDay6")
+tt7 <- topTable(eb, coef="DayDay7")
+tt8 <- topTable(eb, coef="DayDay8")
+tt9 <- topTable(eb, coef="DayDay9")
+tt10 <- topTable(eb, coef="DayDay10")
 
-# Look at the other time-points
-# topTable(eb, coef = "DayDay1", number = 5)
+head(tt2)
+#Adds FDR cutoff of 0.01
+sum(tt1$P.Value < 0.01)
+sum(tt2$P.Value < 0.01)
+sum(tt3$P.Value < 0.01)
+sum(tt4$P.Value < 0.01)
+sum(tt5$P.Value < 0.01)
+sum(tt6$P.Value < 0.01)
+sum(tt7$P.Value < 0.01)
+sum(tt8$P.Value < 0.01)
+sum(tt9$P.Value < 0.01)
+sum(tt10$P.Value < 0.01)
 
-# ordinary_t <- lm$coef / lm$stdev.unscaled / lm$sigma
-# head(ordinary_t)
-# ordinary_t <- ordinary_t[,"DayDay1"]
-# 
-# head(ordinary_t)
-# 
-# ordinary_p = p.adjust(2*pnorm(abs(ordinary_t), lower.tail=FALSE), method="BH")
+base <- tt1$P.Value<0.01
+sum(base)
+final <- new_set[base,]
+dim(final)
+final_eset <- pData(final)
+
+#Order dataset by time
+final_sort <- final_eset[order(final_eset$Day),]
+
+#Sets column names and order for heatmap
+col_order <- rownames(final_sort)
+col_names <- final_sort$subject
+
+data <- exprs(final)
+dt <- as.data.table(data)
+
+setcolorder(dt, col_order)
+data <- data.matrix(dt)
+colnames(data) <- col_names
+heatmap(data)
 
 
 
+
+
+
+#Part 4 of the assignment. Running GSEA analysis using Camera
 c2_set <- getGmt("GSEA-sets/c2.all.v4.0.symbols.gmt")
 gene_ids <- geneIds(c2_set)
 
